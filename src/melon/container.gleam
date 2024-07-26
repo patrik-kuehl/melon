@@ -24,6 +24,14 @@ pub type Port {
   Port(host: String, value: String, protocol: PortProtocol)
 }
 
+/// The type to represent a memory unit.
+pub type MemoryUnit {
+  Byte
+  Kilobyte
+  Megabyte
+  Gigabyte
+}
+
 /// The type that holds information about a container.
 pub opaque type Container {
   Container(
@@ -33,6 +41,7 @@ pub opaque type Container {
     entrypoint: Option(String),
     command: Option(List(String)),
     working_directory: Option(String),
+    memory_limit: Option(MemoryLimit),
     exposed_ports: List(Port),
     environment: List(EnvironmentVariable),
   )
@@ -50,6 +59,7 @@ pub fn new(image: String) -> Container {
     entrypoint: None,
     command: None,
     working_directory: None,
+    memory_limit: None,
     exposed_ports: [],
     environment: [],
   )
@@ -76,6 +86,15 @@ pub fn set_working_directory(
   working_directory: String,
 ) -> Container {
   Container(..container, working_directory: Some(working_directory))
+}
+
+/// Sets the memory limit of the given container.
+pub fn set_memory_limit(
+  container: Container,
+  limit limit: String,
+  unit unit: MemoryUnit,
+) -> Container {
+  Container(..container, memory_limit: Some(MemoryLimit(limit, unit)))
 }
 
 /// Adds an exposed port to the given container.
@@ -113,6 +132,7 @@ pub fn start(container: Container) -> Result(Container, ContainerFailure) {
     |> list.append(user_to_arg(container.user))
     |> list.append(entrypoint_to_arg(container.entrypoint))
     |> list.append(working_directory_to_arg(container.working_directory))
+    |> list.append(memory_limit_to_arg(container.memory_limit))
     |> list.append(list.flat_map(container.exposed_ports, port_to_arg))
     |> list.append(list.flat_map(container.environment, env_to_arg))
     |> list.append(["-d", container.image])
@@ -179,6 +199,10 @@ type EnvironmentVariable {
   EnvironmentVariable(identifier: String, value: String)
 }
 
+type MemoryLimit {
+  MemoryLimit(limit: String, unit: MemoryUnit)
+}
+
 fn docker_cmd(args: List(String)) -> Result(CommandOutput, String) {
   gleamyshell.execute("docker", in: ".", args: args)
 }
@@ -204,6 +228,16 @@ fn working_directory_to_arg(working_directory: Option(String)) -> List(String) {
   }
 }
 
+fn memory_limit_to_arg(memory_limit: Option(MemoryLimit)) -> List(String) {
+  case memory_limit {
+    None -> []
+    Some(MemoryLimit(limit, unit)) -> [
+      "-m",
+      limit <> memory_unit_to_string(unit),
+    ]
+  }
+}
+
 fn port_to_arg(port: Port) -> List(String) {
   [
     "-p",
@@ -217,4 +251,10 @@ fn port_to_arg(port: Port) -> List(String) {
 
 fn env_to_arg(env: EnvironmentVariable) -> List(String) {
   ["-e", env.identifier <> "=" <> env.value]
+}
+
+fn memory_unit_to_string(memory_unit: MemoryUnit) -> String {
+  let assert Ok(value) = string.inspect(memory_unit) |> string.first()
+
+  value |> string.lowercase()
 }
