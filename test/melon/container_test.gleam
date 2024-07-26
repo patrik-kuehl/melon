@@ -1,8 +1,9 @@
+import gleam/string
 import gleamyshell.{Windows}
 import gleeunit/should
 import melon/container.{
   type Port, ContainerCouldNotBeStarted, ContainerIsNotRunning, Gigabyte,
-  Megabyte, Port, Sctp, Tcp, Udp,
+  Kilobyte, Megabyte, Port, Sctp, Tcp, Udp,
 }
 import prelude.{because}
 
@@ -13,24 +14,24 @@ import qcheck_gleeunit_utils/test_spec
 pub fn adminer_test_() {
   use <- test_spec.make()
 
-  adminer_container_test_actions()
+  adminer_container_actions()
 }
 
 @target(javascript)
 pub fn adminer_test() {
-  adminer_container_test_actions()
+  adminer_container_actions()
 }
 
 @target(erlang)
 pub fn postgres_test_() {
   use <- test_spec.make()
 
-  postgres_container_test_actions()
+  postgres_container_actions()
 }
 
 @target(javascript)
 pub fn postgres_test() {
-  postgres_container_test_actions()
+  postgres_container_actions()
 }
 
 @target(erlang)
@@ -69,7 +70,19 @@ pub fn invalid_arguments_test() {
   invalid_argument_actions()
 }
 
-fn adminer_container_test_actions() {
+@target(erlang)
+pub fn env_file_test_() {
+  use <- test_spec.make()
+
+  env_file_actions()
+}
+
+@target(javascript)
+pub fn env_file_test() {
+  env_file_actions()
+}
+
+fn adminer_container_actions() {
   container.new("adminer:4.8.1-standalone")
   |> container.set_memory_limit(limit: "256", unit: Megabyte)
   |> container.add_exposed_port(host: "127.0.0.1", port: "8080", protocol: Tcp)
@@ -85,7 +98,7 @@ fn adminer_container_test_actions() {
   |> because("the container was not running")
 }
 
-fn postgres_container_test_actions() {
+fn postgres_container_actions() {
   container.new("postgres:16.3-alpine3.20")
   |> container.set_memory_limit(limit: "1", unit: Gigabyte)
   |> container.add_exposed_port(host: "127.0.0.1", port: "5432", protocol: Tcp)
@@ -204,4 +217,28 @@ fn invalid_argument_actions() {
     "docker: invalid IP address: -10.\nSee 'docker run --help'.",
   ))
   |> because("the given host is invalid")
+}
+
+fn env_file_actions() {
+  container.new("busybox:1.36.1-musl")
+  |> container.set_memory_limit(limit: "10240", unit: Kilobyte)
+  |> container.set_env_file(file: "./test/melon/.env.test")
+  |> container.start()
+  |> should.be_ok()
+  |> because("the container could be created and started")
+  |> container.stop()
+  |> should.be_ok()
+  |> because("the container could be stopped")
+
+  let assert ContainerCouldNotBeStarted(error_message) =
+    container.new("bash:5.1.16-alpine3.20")
+    |> container.set_memory_limit(limit: "64", unit: Megabyte)
+    |> container.set_env_file(file: "i_dont_exist")
+    |> container.start()
+    |> should.be_error()
+
+  error_message
+  |> string.starts_with("docker: open i_dont_exist: ")
+  |> should.be_true()
+  |> because("the environment file does not exist")
 }
