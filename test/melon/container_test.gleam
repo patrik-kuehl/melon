@@ -1,9 +1,9 @@
 import gleeunit/should
 import melon/container.{
-  type Port, ContainerCouldNotBeStarted, ContainerIsNotRunning, Port, Sctp, Tcp,
-  Udp,
+  type Port, ContainerCouldNotBeStarted, ContainerIsNotRunning, Gigabyte,
+  Megabyte, Port, Sctp, Tcp, Udp,
 }
-import prelude.{because}
+import prelude.{because, run_on_unix_like}
 
 @target(erlang)
 import qcheck_gleeunit_utils/test_spec
@@ -58,6 +58,7 @@ pub fn invalid_arguments_test() {
 
 fn adminer_container_test_actions() {
   container.new("adminer:4.8.1-standalone")
+  |> container.set_memory_limit(limit: "256", unit: Megabyte)
   |> container.add_exposed_port(host: "127.0.0.1", port: "8080", protocol: Tcp)
   |> container.start()
   |> should.be_ok()
@@ -73,6 +74,7 @@ fn adminer_container_test_actions() {
 
 fn postgres_container_test_actions() {
   container.new("postgres:16.3-alpine3.20")
+  |> container.set_memory_limit(limit: "1", unit: Gigabyte)
   |> container.add_exposed_port(host: "127.0.0.1", port: "5432", protocol: Tcp)
   |> container.add_env(name: "POSTGRES_USER", value: "postgres")
   |> container.add_env(name: "POSTGRES_DB", value: "morty_smith")
