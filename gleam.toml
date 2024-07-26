@@ -1,5 +1,5 @@
 name = "melon"
-version = "0.1.0"
+version = "0.2.0"
 description = "A Gleam library for running containers tailored to testing purposes."
 licences = ["MIT"]
 repository = { type = "github", user = "patrik-kuehl", repo = "melon" }
