@@ -25,11 +25,12 @@ Docker Engine API.
 
 ```gleam
 import gleam/io
-import melon/container.{Port, Tcp}
+import melon/container.{Megabyte, Port, Tcp}
 
 pub fn main() {
   let start_result =
     container.new("postgres:16.3-alpine3.20")
+    |> container.set_memory_limit(limit: "256", unit: Megabyte)
     |> container.add_exposed_port(
       host: "127.0.0.1",
       port: "5432",
