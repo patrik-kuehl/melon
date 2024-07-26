@@ -1,9 +1,10 @@
+import gleamyshell.{Windows}
 import gleeunit/should
 import melon/container.{
   type Port, ContainerCouldNotBeStarted, ContainerIsNotRunning, Gigabyte,
   Megabyte, Port, Sctp, Tcp, Udp,
 }
-import prelude.{because, run_on_unix_like}
+import prelude.{because}
 
 @target(erlang)
 import qcheck_gleeunit_utils/test_spec
@@ -42,6 +43,18 @@ pub fn mapped_ports_test_() {
 @target(javascript)
 pub fn mapped_ports_test() {
   mapped_port_actions()
+}
+
+@target(erlang)
+pub fn mapped_sctp_ports_test_() {
+  use <- test_spec.make()
+
+  mapped_sctp_port_actions()
+}
+
+@target(javascript)
+pub fn mapped_sctp_ports_test() {
+  mapped_sctp_port_actions()
 }
 
 @target(erlang)
@@ -99,7 +112,6 @@ fn mapped_port_actions() {
       port: "8000",
       protocol: Tcp,
     )
-    |> container.add_exposed_port(host: "0.0.0.0", port: "8080", protocol: Sctp)
     |> container.add_exposed_port(
       host: "127.0.0.1",
       port: "8090",
@@ -115,12 +127,6 @@ fn mapped_port_actions() {
     |> should.be_ok()
     |> because("the mapped port could be found")
 
-  let assert Port("0.0.0.0", mapped_sctp_port, Sctp) =
-    container
-    |> container.mapped_port(port: "8080", protocol: Sctp)
-    |> should.be_ok()
-    |> because("the mapped port could be found")
-
   let assert Port("127.0.0.1", mapped_udp_port, Udp) =
     container
     |> container.mapped_port(port: "8090", protocol: Udp)
@@ -131,15 +137,43 @@ fn mapped_port_actions() {
   |> should.not_equal("8000")
   |> because("the mapped port is randomly assigned")
 
-  mapped_sctp_port
-  |> should.not_equal("8080")
-  |> because("the mapped port is randomly assigned")
-
   mapped_udp_port
   |> should.not_equal("8090")
   |> because("the mapped port is randomly assigned")
 
   container |> container.stop()
+}
+
+fn mapped_sctp_port_actions() {
+  case gleamyshell.os() {
+    Windows -> Nil
+    _ -> {
+      let container =
+        container.new("nginx:1.27.0-alpine3.19")
+        |> container.add_exposed_port(
+          host: "0.0.0.0",
+          port: "80",
+          protocol: Sctp,
+        )
+        |> container.start()
+        |> should.be_ok()
+        |> because("the container could be created and started")
+
+      let assert Port("0.0.0.0", mapped_sctp_port, Sctp) =
+        container
+        |> container.mapped_port(port: "80", protocol: Sctp)
+        |> should.be_ok()
+        |> because("the mapped port could be found")
+
+      mapped_sctp_port
+      |> should.not_equal("80")
+      |> because("the mapped port is randomly assigned")
+
+      let _ = container |> container.stop()
+
+      Nil
+    }
+  }
 }
 
 fn invalid_argument_actions() {
