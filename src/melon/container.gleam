@@ -42,6 +42,7 @@ pub opaque type Container {
     command: Option(List(String)),
     working_directory: Option(String),
     memory_limit: Option(MemoryLimit),
+    env_file: Option(String),
     exposed_ports: List(Port),
     environment: List(EnvironmentVariable),
   )
@@ -60,6 +61,7 @@ pub fn new(image: String) -> Container {
     command: None,
     working_directory: None,
     memory_limit: None,
+    env_file: None,
     exposed_ports: [],
     environment: [],
   )
@@ -95,6 +97,11 @@ pub fn set_memory_limit(
   unit unit: MemoryUnit,
 ) -> Container {
   Container(..container, memory_limit: Some(MemoryLimit(limit, unit)))
+}
+
+/// Sets the environment file of a given container.
+pub fn set_env_file(container: Container, file env_file: String) -> Container {
+  Container(..container, env_file: Some(env_file))
 }
 
 /// Adds an exposed port to the given container.
@@ -133,6 +140,7 @@ pub fn start(container: Container) -> Result(Container, ContainerFailure) {
     |> list.append(entrypoint_to_arg(container.entrypoint))
     |> list.append(working_directory_to_arg(container.working_directory))
     |> list.append(memory_limit_to_arg(container.memory_limit))
+    |> list.append(env_file_to_arg(container.env_file))
     |> list.append(list.flat_map(container.exposed_ports, port_to_arg))
     |> list.append(list.flat_map(container.environment, env_to_arg))
     |> list.append(["-d", container.image])
@@ -235,6 +243,13 @@ fn memory_limit_to_arg(memory_limit: Option(MemoryLimit)) -> List(String) {
       "-m",
       limit <> memory_unit_to_string(unit),
     ]
+  }
+}
+
+fn env_file_to_arg(env_file: Option(String)) -> List(String) {
+  case env_file {
+    None -> []
+    Some(file) -> ["--env-file", file]
   }
 }
 
