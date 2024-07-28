@@ -3,7 +3,7 @@ import gleamyshell.{Windows}
 import gleeunit/should
 import melon/container.{
   type Port, ContainerCouldNotBeStarted, ContainerIsNotRunning, Gigabyte,
-  Kilobyte, Megabyte, Port, Sctp, Tcp, Udp,
+  Kilobyte, Megabyte, Port, Sctp, Second, Tcp, Udp,
 }
 import prelude.{because}
 
@@ -84,8 +84,8 @@ pub fn env_file_test() {
 
 fn adminer_container_actions() {
   container.new("adminer:4.8.1-standalone")
-  |> container.set_memory_limit(limit: "256", unit: Megabyte)
-  |> container.add_exposed_port(host: "127.0.0.1", port: "8080", protocol: Tcp)
+  |> container.set_memory_limit(limit: 256, unit: Megabyte)
+  |> container.add_exposed_port(host: "127.0.0.1", port: 8080, protocol: Tcp)
   |> container.start()
   |> should.be_ok()
   |> because("the container could be created and started")
@@ -100,8 +100,13 @@ fn adminer_container_actions() {
 
 fn postgres_container_actions() {
   container.new("postgres:16.3-alpine3.20")
-  |> container.set_memory_limit(limit: "1", unit: Gigabyte)
-  |> container.add_exposed_port(host: "127.0.0.1", port: "5432", protocol: Tcp)
+  |> container.set_memory_limit(limit: 1, unit: Gigabyte)
+  |> container.set_health_check_command(["pg_isready", "-d", "morty_smith"])
+  |> container.set_health_check_interval(interval: 10, unit: Second)
+  |> container.set_health_check_timeout(timeout: 15, unit: Second)
+  |> container.set_health_check_start_period(start_period: 5, unit: Second)
+  |> container.set_health_check_retries(5)
+  |> container.add_exposed_port(host: "127.0.0.1", port: 5432, protocol: Tcp)
   |> container.add_env(name: "POSTGRES_USER", value: "postgres")
   |> container.add_env(name: "POSTGRES_DB", value: "morty_smith")
   |> container.add_env(name: "POSTGRES_PASSWORD", value: "rick_sanchez")
@@ -120,38 +125,30 @@ fn postgres_container_actions() {
 fn mapped_port_actions() {
   let container =
     container.new("memcached:1.6.29-alpine3.20")
-    |> container.add_exposed_port(
-      host: "127.0.0.1",
-      port: "8000",
-      protocol: Tcp,
-    )
-    |> container.add_exposed_port(
-      host: "127.0.0.1",
-      port: "8090",
-      protocol: Udp,
-    )
+    |> container.add_exposed_port(host: "127.0.0.1", port: 8000, protocol: Tcp)
+    |> container.add_exposed_port(host: "127.0.0.1", port: 8090, protocol: Udp)
     |> container.start()
     |> should.be_ok()
     |> because("the container could be created and started")
 
   let assert Port("127.0.0.1", mapped_tcp_port, Tcp) =
     container
-    |> container.mapped_port(port: "8000", protocol: Tcp)
+    |> container.mapped_port(port: 8000, protocol: Tcp)
     |> should.be_ok()
     |> because("the mapped port could be found")
 
   let assert Port("127.0.0.1", mapped_udp_port, Udp) =
     container
-    |> container.mapped_port(port: "8090", protocol: Udp)
+    |> container.mapped_port(port: 8090, protocol: Udp)
     |> should.be_ok()
     |> because("the mapped port could be found")
 
   mapped_tcp_port
-  |> should.not_equal("8000")
+  |> should.not_equal(8000)
   |> because("the mapped port is randomly assigned")
 
   mapped_udp_port
-  |> should.not_equal("8090")
+  |> should.not_equal(8090)
   |> because("the mapped port is randomly assigned")
 
   container |> container.stop()
@@ -163,23 +160,19 @@ fn mapped_sctp_port_actions() {
     _ -> {
       let container =
         container.new("nginx:1.27.0-alpine3.19")
-        |> container.add_exposed_port(
-          host: "0.0.0.0",
-          port: "80",
-          protocol: Sctp,
-        )
+        |> container.add_exposed_port(host: "0.0.0.0", port: 80, protocol: Sctp)
         |> container.start()
         |> should.be_ok()
         |> because("the container could be created and started")
 
       let assert Port("0.0.0.0", mapped_sctp_port, Sctp) =
         container
-        |> container.mapped_port(port: "80", protocol: Sctp)
+        |> container.mapped_port(port: 80, protocol: Sctp)
         |> should.be_ok()
         |> because("the mapped port could be found")
 
       mapped_sctp_port
-      |> should.not_equal("80")
+      |> should.not_equal(80)
       |> because("the mapped port is randomly assigned")
 
       let _ = container |> container.stop()
@@ -201,7 +194,7 @@ fn invalid_argument_actions() {
   |> because("the given image is invalid")
 
   container.new(deno_image)
-  |> container.add_exposed_port(host: "127.0.0.1", port: "-20", protocol: Tcp)
+  |> container.add_exposed_port(host: "127.0.0.1", port: -20, protocol: Tcp)
   |> container.start()
   |> should.be_error()
   |> should.equal(ContainerCouldNotBeStarted(
@@ -210,7 +203,7 @@ fn invalid_argument_actions() {
   |> because("the given port is invalid")
 
   container.new(deno_image)
-  |> container.add_exposed_port(host: "-10", port: "8080", protocol: Udp)
+  |> container.add_exposed_port(host: "-10", port: 8080, protocol: Udp)
   |> container.start()
   |> should.be_error()
   |> should.equal(ContainerCouldNotBeStarted(
@@ -221,8 +214,8 @@ fn invalid_argument_actions() {
 
 fn env_file_actions() {
   container.new("busybox:1.36.1-musl")
-  |> container.set_memory_limit(limit: "10240", unit: Kilobyte)
-  |> container.set_env_file(file: "./test/melon/.env.test")
+  |> container.set_memory_limit(limit: 10_240, unit: Kilobyte)
+  |> container.set_env_file("./test/melon/.env.test")
   |> container.start()
   |> should.be_ok()
   |> because("the container could be created and started")
@@ -232,8 +225,8 @@ fn env_file_actions() {
 
   let assert ContainerCouldNotBeStarted(error_message) =
     container.new("bash:5.1.16-alpine3.20")
-    |> container.set_memory_limit(limit: "64", unit: Megabyte)
-    |> container.set_env_file(file: "i_dont_exist")
+    |> container.set_memory_limit(limit: 64, unit: Megabyte)
+    |> container.set_env_file("i_dont_exist")
     |> container.start()
     |> should.be_error()
 
