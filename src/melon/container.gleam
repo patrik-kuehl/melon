@@ -1,3 +1,4 @@
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
@@ -21,7 +22,7 @@ pub type PortProtocol {
 
 /// The type that holds information about a port.
 pub type Port {
-  Port(host: String, value: String, protocol: PortProtocol)
+  Port(host: String, value: Int, protocol: PortProtocol)
 }
 
 /// The type to represent a memory unit.
@@ -30,6 +31,12 @@ pub type MemoryUnit {
   Kilobyte
   Megabyte
   Gigabyte
+}
+
+/// The type to represent a time unit.
+pub type TimeUnit {
+  Second
+  Minute
 }
 
 /// The type that holds information about a container.
@@ -43,6 +50,11 @@ pub opaque type Container {
     working_directory: Option(String),
     memory_limit: Option(MemoryLimit),
     env_file: Option(String),
+    health_check_command: Option(List(String)),
+    health_check_interval: Option(HealthCheckInterval),
+    health_check_timeout: Option(HealthCheckTimeout),
+    health_check_start_period: Option(HealthCheckStartPeriod),
+    health_check_retries: Option(Int),
     exposed_ports: List(Port),
     environment: List(EnvironmentVariable),
   )
@@ -62,6 +74,11 @@ pub fn new(image: String) -> Container {
     working_directory: None,
     memory_limit: None,
     env_file: None,
+    health_check_command: None,
+    health_check_interval: None,
+    health_check_timeout: None,
+    health_check_start_period: None,
+    health_check_retries: None,
     exposed_ports: [],
     environment: [],
   )
@@ -93,22 +110,71 @@ pub fn set_working_directory(
 /// Sets the memory limit of the given container.
 pub fn set_memory_limit(
   container: Container,
-  limit limit: String,
+  limit limit: Int,
   unit unit: MemoryUnit,
 ) -> Container {
   Container(..container, memory_limit: Some(MemoryLimit(limit, unit)))
 }
 
 /// Sets the environment file of a given container.
-pub fn set_env_file(container: Container, file env_file: String) -> Container {
+pub fn set_env_file(container: Container, env_file: String) -> Container {
   Container(..container, env_file: Some(env_file))
+}
+
+/// Sets the health check command of the given container.
+pub fn set_health_check_command(
+  container: Container,
+  command: List(String),
+) -> Container {
+  Container(..container, health_check_command: Some(command))
+}
+
+/// Sets the health check interval of the given container.
+pub fn set_health_check_interval(
+  container: Container,
+  interval interval: Int,
+  unit unit: TimeUnit,
+) -> Container {
+  Container(
+    ..container,
+    health_check_interval: Some(HealthCheckInterval(interval, unit)),
+  )
+}
+
+/// Sets the health check timeout of the given container.
+pub fn set_health_check_timeout(
+  container: Container,
+  timeout timeout: Int,
+  unit unit: TimeUnit,
+) -> Container {
+  Container(
+    ..container,
+    health_check_timeout: Some(HealthCheckTimeout(timeout, unit)),
+  )
+}
+
+/// Sets the health check start period of the given container.
+pub fn set_health_check_start_period(
+  container: Container,
+  start_period start_period: Int,
+  unit unit: TimeUnit,
+) -> Container {
+  Container(
+    ..container,
+    health_check_start_period: Some(HealthCheckStartPeriod(start_period, unit)),
+  )
+}
+
+/// Sets the health check retry count of the given container.
+pub fn set_health_check_retries(container: Container, retries: Int) -> Container {
+  Container(..container, health_check_retries: Some(retries))
 }
 
 /// Adds an exposed port to the given container.
 pub fn add_exposed_port(
   container: Container,
   host host: String,
-  port port: String,
+  port port: Int,
   protocol protocol: PortProtocol,
 ) -> Container {
   Container(
@@ -141,6 +207,13 @@ pub fn start(container: Container) -> Result(Container, ContainerFailure) {
     |> list.append(working_directory_to_arg(container.working_directory))
     |> list.append(memory_limit_to_arg(container.memory_limit))
     |> list.append(env_file_to_arg(container.env_file))
+    |> list.append(health_check_command_to_arg(container.health_check_command))
+    |> list.append(health_check_interval_to_arg(container.health_check_interval))
+    |> list.append(health_check_timeout_to_arg(container.health_check_timeout))
+    |> list.append(health_check_start_period_to_arg(
+      container.health_check_start_period,
+    ))
+    |> list.append(health_check_retries_to_arg(container.health_check_retries))
     |> list.append(list.flat_map(container.exposed_ports, port_to_arg))
     |> list.append(list.flat_map(container.environment, env_to_arg))
     |> list.append(["-d", container.image])
@@ -180,7 +253,7 @@ pub fn stop(container: Container) -> Result(Container, ContainerFailure) {
 /// Returns a mapped port of the given container.
 pub fn mapped_port(
   container: Container,
-  port port: String,
+  port port: Int,
   protocol protocol: PortProtocol,
 ) -> Result(Port, ContainerFailure) {
   case container.id {
@@ -190,12 +263,18 @@ pub fn mapped_port(
         docker_cmd([
           "port",
           container_id,
-          port <> "/" <> string.inspect(protocol) |> string.lowercase(),
+          int.to_string(port)
+            <> "/"
+            <> string.inspect(protocol) |> string.lowercase(),
         ])
       {
         Ok(CommandOutput(0, output)) ->
           case string.trim(output) |> string.split(":") {
-            [host, value, ..] -> Port(host, value, protocol) |> Ok()
+            [host, value, ..] ->
+              case int.parse(value) {
+                Error(_) -> Error(MappedPortCouldNotBeFound)
+                Ok(int_value) -> Port(host, int_value, protocol) |> Ok()
+              }
             _ -> Error(MappedPortCouldNotBeFound)
           }
         _ -> Error(MappedPortCouldNotBeFound)
@@ -208,7 +287,19 @@ type EnvironmentVariable {
 }
 
 type MemoryLimit {
-  MemoryLimit(limit: String, unit: MemoryUnit)
+  MemoryLimit(limit: Int, unit: MemoryUnit)
+}
+
+type HealthCheckInterval {
+  HealthCheckInterval(interval: Int, unit: TimeUnit)
+}
+
+type HealthCheckTimeout {
+  HealthCheckTimeout(timeout: Int, unit: TimeUnit)
+}
+
+type HealthCheckStartPeriod {
+  HealthCheckStartPeriod(start_period: Int, unit: TimeUnit)
 }
 
 fn docker_cmd(args: List(String)) -> Result(CommandOutput, String) {
@@ -241,7 +332,7 @@ fn memory_limit_to_arg(memory_limit: Option(MemoryLimit)) -> List(String) {
     None -> []
     Some(MemoryLimit(limit, unit)) -> [
       "-m",
-      limit <> memory_unit_to_string(unit),
+      int.to_string(limit) <> unit_to_string(unit),
     ]
   }
 }
@@ -253,12 +344,62 @@ fn env_file_to_arg(env_file: Option(String)) -> List(String) {
   }
 }
 
+fn health_check_command_to_arg(command: Option(List(String))) -> List(String) {
+  case command {
+    None -> []
+    Some(value) -> ["--health-cmd", "\"" <> string.join(value, " ") <> "\""]
+  }
+}
+
+fn health_check_interval_to_arg(
+  interval: Option(HealthCheckInterval),
+) -> List(String) {
+  case interval {
+    None -> []
+    Some(value) -> [
+      "--health-interval",
+      int.to_string(value.interval) <> unit_to_string(value.unit),
+    ]
+  }
+}
+
+fn health_check_timeout_to_arg(
+  interval: Option(HealthCheckTimeout),
+) -> List(String) {
+  case interval {
+    None -> []
+    Some(value) -> [
+      "--health-timeout",
+      int.to_string(value.timeout) <> unit_to_string(value.unit),
+    ]
+  }
+}
+
+fn health_check_start_period_to_arg(
+  interval: Option(HealthCheckStartPeriod),
+) -> List(String) {
+  case interval {
+    None -> []
+    Some(value) -> [
+      "--health-start-period",
+      int.to_string(value.start_period) <> unit_to_string(value.unit),
+    ]
+  }
+}
+
+fn health_check_retries_to_arg(retries: Option(Int)) {
+  case retries {
+    None -> []
+    Some(value) -> ["--health-retries", int.to_string(value)]
+  }
+}
+
 fn port_to_arg(port: Port) -> List(String) {
   [
     "-p",
     port.host
       <> ":0:"
-      <> port.value
+      <> int.to_string(port.value)
       <> "/"
       <> string.inspect(port.protocol) |> string.lowercase(),
   ]
@@ -268,8 +409,8 @@ fn env_to_arg(env: EnvironmentVariable) -> List(String) {
   ["-e", env.identifier <> "=" <> env.value]
 }
 
-fn memory_unit_to_string(memory_unit: MemoryUnit) -> String {
-  let assert Ok(value) = string.inspect(memory_unit) |> string.first()
+fn unit_to_string(unit: a) -> String {
+  let assert Ok(value) = string.inspect(unit) |> string.first()
 
   value |> string.lowercase()
 }
