@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2024-07-28
+
+### Added
+
+-   Added `melon/container/set_health_check_retries` to set the health check retry count of a given container.
+-   Added `melon/container/set_health_check_start_period` to set the health check start period of a given container.
+-   Added `melon/container/set_health_check_timeout` to set the health check timeout of a given container.
+-   Added `melon/container/set_health_check_interval` to set the health check interval of a given container.
+-   Added `melon/container/set_health_check_command` to set the health check command of a given container.
+
 ## [0.2.0] - 2024-07-26
 
 ### Added
@@ -27,6 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 -   Added `melon/container/set_user` to set the user of a given container.
 -   Added `melon/container/new` to create a new container.
 
-[unreleased]: https://github.com/patrik-kuehl/melon/compare/v0.2.0...HEAD
+[unreleased]: https://github.com/patrik-kuehl/melon/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/patrik-kuehl/melon/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/patrik-kuehl/melon/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/patrik-kuehl/melon/releases/tag/v0.1.0
