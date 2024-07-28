@@ -24,18 +24,20 @@ Docker Engine API.
 ## Demo 🍈
 
 ```gleam
+import gleam/int
 import gleam/io
-import melon/container.{Megabyte, Port, Tcp}
+import melon/container.{Megabyte, Port, Second, Tcp}
 
 pub fn main() {
   let start_result =
     container.new("postgres:16.3-alpine3.20")
-    |> container.set_memory_limit(limit: "256", unit: Megabyte)
-    |> container.add_exposed_port(
-      host: "127.0.0.1",
-      port: "5432",
-      protocol: Tcp,
-    )
+    |> container.set_memory_limit(limit: 256, unit: Megabyte)
+    |> container.set_health_check_command(["pg_isready", "-d", "morty_smith"])
+    |> container.set_health_check_interval(interval: 10, unit: Second)
+    |> container.set_health_check_timeout(timeout: 15, unit: Second)
+    |> container.set_health_check_start_period(start_period: 5, unit: Second)
+    |> container.set_health_check_retries(5)
+    |> container.add_exposed_port(host: "127.0.0.1", port: 5432, protocol: Tcp)
     |> container.add_env(name: "POSTGRES_USER", value: "postgres")
     |> container.add_env(name: "POSTGRES_DB", value: "morty_smith")
     |> container.add_env(name: "POSTGRES_PASSWORD", value: "rick_sanchez")
@@ -44,11 +46,15 @@ pub fn main() {
   case start_result {
     Error(_) -> io.println("Couldn't start the container :(")
     Ok(container) -> {
-      case container.mapped_port(container, port: "5432", protocol: Tcp) {
+      case container.mapped_port(container, port: 5432, protocol: Tcp) {
         Error(_) -> io.println("Couldn't find the mapped port :<")
         Ok(Port(host, port, _)) ->
           io.println(
-            "The database is available on " <> host <> ":" <> port <> ".",
+            "The database is available on "
+            <> host
+            <> ":"
+            <> int.to_string(port)
+            <> ".",
           )
       }
     }
