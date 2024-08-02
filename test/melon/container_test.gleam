@@ -2,8 +2,10 @@ import gleam/string
 import gleamyshell.{Windows}
 import gleeunit/should
 import melon/container.{
-  type Port, ContainerCouldNotBeStarted, ContainerIsNotRunning, Gigabyte,
-  Kilobyte, Megabyte, Port, Sctp, Second, Tcp, Udp,
+  type Port, CannotObtainHealthStatusOfContainerThatIsNotRunning,
+  CannotStopContainerThatIsNotRunning, CouldNotObtainHealthStatus,
+  CouldNotStartContainer, Gigabyte, Kilobyte, Megabyte, Port, Sctp, Second, Tcp,
+  Udp,
 }
 import prelude.{because}
 
@@ -94,18 +96,20 @@ fn adminer_container_actions() {
   |> because("the container could be stopped")
   |> container.stop()
   |> should.be_error()
-  |> should.equal(ContainerIsNotRunning)
+  |> should.equal(CannotStopContainerThatIsNotRunning)
   |> because("the container was not running")
 }
 
 fn postgres_container_actions() {
-  container.new("postgres:16.3-alpine3.20")
+  let image = "postgres:16.3-alpine3.20"
+
+  container.new(image)
   |> container.set_memory_limit(limit: 1, unit: Gigabyte)
   |> container.set_health_check_command(["pg_isready", "-d", "morty_smith"])
-  |> container.set_health_check_interval(interval: 10, unit: Second)
-  |> container.set_health_check_timeout(timeout: 15, unit: Second)
-  |> container.set_health_check_start_period(start_period: 5, unit: Second)
-  |> container.set_health_check_retries(5)
+  |> container.set_health_check_interval(interval: 2, unit: Second)
+  |> container.set_health_check_timeout(timeout: 5, unit: Second)
+  |> container.set_health_check_start_period(start_period: 2, unit: Second)
+  |> container.set_health_check_retries(10)
   |> container.add_exposed_port(host: "127.0.0.1", port: 5432, protocol: Tcp)
   |> container.add_env(name: "POSTGRES_USER", value: "postgres")
   |> container.add_env(name: "POSTGRES_DB", value: "morty_smith")
@@ -113,12 +117,57 @@ fn postgres_container_actions() {
   |> container.start()
   |> should.be_ok()
   |> because("the container could be created and started")
+  |> container.wait_until_healthy(retries: 10)
+  |> should.be_ok()
+  |> because("the database set up was successful")
   |> container.stop()
   |> should.be_ok()
   |> because("the container could be stopped")
   |> container.stop()
   |> should.be_error()
-  |> should.equal(ContainerIsNotRunning)
+  |> should.equal(CannotStopContainerThatIsNotRunning)
+  |> because("the container was not running")
+
+  let container =
+    container.new(image)
+    |> container.set_memory_limit(limit: 512, unit: Megabyte)
+    |> container.add_exposed_port(host: "127.0.0.1", port: 5432, protocol: Tcp)
+    |> container.add_env(name: "POSTGRES_USER", value: "postgres")
+    |> container.add_env(name: "POSTGRES_DB", value: "morty_smith")
+    |> container.add_env(name: "POSTGRES_PASSWORD", value: "rick_sanchez")
+    |> container.start()
+    |> should.be_ok()
+    |> because("the container could be created and started")
+
+  let assert CouldNotObtainHealthStatus(error_message) =
+    container
+    |> container.wait_until_healthy(retries: 3)
+    |> should.be_error()
+
+  error_message
+  |> string.starts_with("template parsing error: ")
+  |> should.be_true()
+  |> because("no health check was configured")
+
+  let _ = container.stop(container)
+
+  let container =
+    container.new(image)
+    |> container.set_memory_limit(limit: 1, unit: Gigabyte)
+    |> container.set_health_check_command(["pg_isready", "-d", "morty_smith"])
+    |> container.set_health_check_interval(interval: 2, unit: Second)
+    |> container.set_health_check_timeout(timeout: 5, unit: Second)
+    |> container.set_health_check_start_period(start_period: 2, unit: Second)
+    |> container.set_health_check_retries(10)
+    |> container.add_exposed_port(host: "127.0.0.1", port: 5432, protocol: Tcp)
+    |> container.add_env(name: "POSTGRES_USER", value: "postgres")
+    |> container.add_env(name: "POSTGRES_DB", value: "morty_smith")
+    |> container.add_env(name: "POSTGRES_PASSWORD", value: "rick_sanchez")
+
+  container
+  |> container.wait_until_healthy(retries: 10)
+  |> should.be_error()
+  |> should.equal(CannotObtainHealthStatusOfContainerThatIsNotRunning)
   |> because("the container was not running")
 }
 
@@ -151,7 +200,7 @@ fn mapped_port_actions() {
   |> should.not_equal(8090)
   |> because("the mapped port is randomly assigned")
 
-  container |> container.stop()
+  container.stop(container)
 }
 
 fn mapped_sctp_port_actions() {
@@ -188,7 +237,7 @@ fn invalid_argument_actions() {
   container.new("___")
   |> container.start()
   |> should.be_error()
-  |> should.equal(ContainerCouldNotBeStarted(
+  |> should.equal(CouldNotStartContainer(
     "docker: invalid reference format.\nSee 'docker run --help'.",
   ))
   |> because("the given image is invalid")
@@ -197,7 +246,7 @@ fn invalid_argument_actions() {
   |> container.add_exposed_port(host: "127.0.0.1", port: -20, protocol: Tcp)
   |> container.start()
   |> should.be_error()
-  |> should.equal(ContainerCouldNotBeStarted(
+  |> should.equal(CouldNotStartContainer(
     "docker: invalid containerPort: -20.\nSee 'docker run --help'.",
   ))
   |> because("the given port is invalid")
@@ -206,7 +255,7 @@ fn invalid_argument_actions() {
   |> container.add_exposed_port(host: "-10", port: 8080, protocol: Udp)
   |> container.start()
   |> should.be_error()
-  |> should.equal(ContainerCouldNotBeStarted(
+  |> should.equal(CouldNotStartContainer(
     "docker: invalid IP address: -10.\nSee 'docker run --help'.",
   ))
   |> because("the given host is invalid")
@@ -223,7 +272,7 @@ fn env_file_actions() {
   |> should.be_ok()
   |> because("the container could be stopped")
 
-  let assert ContainerCouldNotBeStarted(error_message) =
+  let CouldNotStartContainer(error_message) =
     container.new("bash:5.1.16-alpine3.20")
     |> container.set_memory_limit(limit: 64, unit: Megabyte)
     |> container.set_env_file("i_dont_exist")
