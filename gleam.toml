@@ -1,6 +1,6 @@
 name = "melon"
-version = "0.3.0"
-description = "A Gleam library for running containers tailored to testing purposes."
+version = "0.4.0"
+description = "A Gleam library for running test containers via Docker."
 licences = ["MIT"]
 repository = { type = "github", user = "patrik-kuehl", repo = "melon" }
 gleam = ">= 1.0.0 and < 2.0.0"
