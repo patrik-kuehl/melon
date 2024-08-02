@@ -4,13 +4,32 @@ import gleam/option.{type Option, None, Some}
 import gleam/string
 import gleamyshell.{type CommandOutput, CommandOutput}
 
+/// The error type to represent the reason why a container
+/// could not be started.
+pub type ContainerStartFailure {
+  CouldNotStartContainer(reason: String)
+}
+
 /// The error type to represent a reason why a container
-/// operation failed.
-pub type ContainerFailure {
-  ContainerIsNotRunning
-  ContainerCouldNotBeStarted(reason: String)
-  ContainerCouldNotBeStopped(reason: String)
-  MappedPortCouldNotBeFound
+/// could not be stopped.
+pub type ContainerStopFailure {
+  CannotStopContainerThatIsNotRunning
+  CouldNotStopContainer(reason: String)
+}
+
+/// The error type to represent a reason why the health status
+/// of a container could not be obtained.
+pub type ContainerHealthStatusFailure {
+  CannotObtainHealthStatusOfContainerThatIsNotRunning
+  CouldNotObtainHealthStatus(reason: String)
+  ContainerIsUnhealthy
+}
+
+/// The error type to represent a reason why a mapped port
+/// of a container could not be found.
+pub type ContainerMappedPortFailure {
+  CannotObtainMappedPortOfContainerThatIsNotRunning
+  CouldNotFindMappedPort
 }
 
 /// The type to specify the protocol a port is exposed via.
@@ -199,7 +218,7 @@ pub fn add_env(
 }
 
 /// Starts the given container.
-pub fn start(container: Container) -> Result(Container, ContainerFailure) {
+pub fn start(container: Container) -> Result(Container, ContainerStartFailure) {
   let arguments =
     ["run", "--rm"]
     |> list.append(user_to_arg(container.user))
@@ -222,30 +241,44 @@ pub fn start(container: Container) -> Result(Container, ContainerFailure) {
   case docker_cmd(arguments) {
     Ok(CommandOutput(0, output)) ->
       case string.trim(output) |> string.split("\n") |> list.last() {
-        Error(_) ->
-          string.trim(output) |> ContainerCouldNotBeStarted() |> Error()
+        Error(_) -> string.trim(output) |> CouldNotStartContainer() |> Error()
         Ok(container_id) ->
           Container(..container, id: string.trim(container_id) |> Some())
           |> Ok()
       }
     Ok(CommandOutput(_, output)) ->
-      string.trim(output) |> ContainerCouldNotBeStarted() |> Error()
-    Error(reason) ->
-      string.trim(reason) |> ContainerCouldNotBeStarted() |> Error()
+      string.trim(output) |> CouldNotStartContainer() |> Error()
+    Error(reason) -> string.trim(reason) |> CouldNotStartContainer() |> Error()
   }
 }
 
 /// Stops the given container.
-pub fn stop(container: Container) -> Result(Container, ContainerFailure) {
+pub fn stop(container: Container) -> Result(Container, ContainerStopFailure) {
   case container.id {
-    None -> Error(ContainerIsNotRunning)
+    None -> Error(CannotStopContainerThatIsNotRunning)
     Some(container_id) ->
       case docker_cmd(["stop", container_id]) {
         Ok(CommandOutput(0, _)) -> Container(..container, id: None) |> Ok()
         Ok(CommandOutput(_, output)) ->
-          string.trim(output) |> ContainerCouldNotBeStopped() |> Error()
+          string.trim(output) |> CouldNotStopContainer() |> Error()
         Error(reason) ->
-          string.trim(reason) |> ContainerCouldNotBeStopped() |> Error()
+          string.trim(reason) |> CouldNotStopContainer() |> Error()
+      }
+  }
+}
+
+/// Waits until the given container is healthy. It fails if all retries
+/// are exhausted.
+pub fn wait_until_healthy(
+  container: Container,
+  retries retries: Int,
+) -> Result(Container, ContainerHealthStatusFailure) {
+  case container.id {
+    None -> Error(CannotObtainHealthStatusOfContainerThatIsNotRunning)
+    Some(container_id) ->
+      case retries {
+        _ if retries < 0 -> do_wait_until_healthy(container, container_id, 0)
+        _ -> do_wait_until_healthy(container, container_id, retries)
       }
   }
 }
@@ -255,9 +288,9 @@ pub fn mapped_port(
   container: Container,
   port port: Int,
   protocol protocol: PortProtocol,
-) -> Result(Port, ContainerFailure) {
+) -> Result(Port, ContainerMappedPortFailure) {
   case container.id {
-    None -> Error(ContainerIsNotRunning)
+    None -> Error(CannotObtainMappedPortOfContainerThatIsNotRunning)
     Some(container_id) ->
       case
         docker_cmd([
@@ -272,12 +305,12 @@ pub fn mapped_port(
           case string.trim(output) |> string.split(":") {
             [host, value, ..] ->
               case int.parse(value) {
-                Error(_) -> Error(MappedPortCouldNotBeFound)
+                Error(_) -> Error(CouldNotFindMappedPort)
                 Ok(int_value) -> Port(host, int_value, protocol) |> Ok()
               }
-            _ -> Error(MappedPortCouldNotBeFound)
+            _ -> Error(CouldNotFindMappedPort)
           }
-        _ -> Error(MappedPortCouldNotBeFound)
+        _ -> Error(CouldNotFindMappedPort)
       }
   }
 }
@@ -304,6 +337,45 @@ type HealthCheckStartPeriod {
 
 fn docker_cmd(args: List(String)) -> Result(CommandOutput, String) {
   gleamyshell.execute("docker", in: ".", args: args)
+}
+
+fn do_wait_until_healthy(
+  container: Container,
+  container_id: String,
+  retries: Int,
+) -> Result(Container, ContainerHealthStatusFailure) {
+  case retries == -1 {
+    True -> Error(ContainerIsUnhealthy)
+    False ->
+      case
+        docker_cmd([
+          "inspect",
+          "--format",
+          "{{.State.Health.Status}}",
+          container_id,
+        ])
+      {
+        Error(reason) ->
+          string.trim(reason)
+          |> CouldNotObtainHealthStatus()
+          |> Error()
+        Ok(CommandOutput(0, output)) ->
+          case is_healthy(output) {
+            True -> Ok(container)
+            False -> {
+              sleep(1000)
+
+              do_wait_until_healthy(container, container_id, retries - 1)
+            }
+          }
+        Ok(CommandOutput(_, output)) ->
+          string.trim(output) |> CouldNotObtainHealthStatus() |> Error()
+      }
+  }
+}
+
+fn is_healthy(output: String) -> Bool {
+  string.trim(output) |> string.lowercase() == "healthy"
 }
 
 fn user_to_arg(user: Option(String)) -> List(String) {
@@ -347,7 +419,7 @@ fn env_file_to_arg(env_file: Option(String)) -> List(String) {
 fn health_check_command_to_arg(command: Option(List(String))) -> List(String) {
   case command {
     None -> []
-    Some(value) -> ["--health-cmd", "\"" <> string.join(value, " ") <> "\""]
+    Some(value) -> ["--health-cmd", string.join(value, " ")]
   }
 }
 
@@ -414,3 +486,7 @@ fn unit_to_string(unit: a) -> String {
 
   value |> string.lowercase()
 }
+
+@external(erlang, "timer", "sleep")
+@external(javascript, "../melon_ffi.mjs", "sleep")
+fn sleep(milliseconds: Int) -> Nil
