@@ -21,6 +21,19 @@ dependencies, as consumers of this library don't need to reach for a target-spec
 [fetch](https://hexdocs.pm/gleam_fetch/) and [httpc](https://hexdocs.pm/gleam_httpc/) in order to communicate with the
 Docker Engine API.
 
+## Maintenance Notice 🍈
+
+As of the 11th of August 2024, I won't be maintaining this project any longer.
+
+I don't invest time in Gleam anymore, as I encountered too many breaking changes within minor version bumps, and too
+many packages on Hex, which have been released as a first major version (1.0.0) without being battle-tested first, thus
+being prone to breaking API changes or unexpected behavior.
+
+I wish Gleam all the best, but I revert to other (enterprise-y) languages I'm already used to.
+
+If you depend on Melon and/or want to maintain it, feel free to get in touch with me. I'd be willing to transfer the
+ownership of this repository and the package on Hex. No need to create a fork :v:
+
 ## Demo 🍈
 
 ```gleam
